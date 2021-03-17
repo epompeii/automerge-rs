@@ -19,6 +19,7 @@ mod columnar;
 mod concurrent_operations;
 mod encoding;
 mod error;
+mod expanded_op;
 mod internal;
 mod object_store;
 mod op_handle;

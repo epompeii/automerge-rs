@@ -6,6 +6,8 @@ use crate::columnar::{
 use crate::encoding::DEFLATE_MIN_SIZE;
 use crate::encoding::{Decodable, Encodable};
 use crate::error::{AutomergeError, InvalidChangeError};
+use crate::expanded_op::ExpandedOpIterator;
+use crate::internal::InternalOpType;
 use automerge_protocol as amp;
 use core::fmt::Debug;
 use flate2::{
@@ -21,6 +23,7 @@ use std::io::Read;
 use std::io::Write;
 use std::ops::Range;
 use std::str;
+use tracing::instrument;
 
 const HASH_BYTES: usize = 32;
 const BLOCK_TYPE_DOC: u8 = 0;
@@ -222,6 +225,7 @@ impl Change {
         &self.actors[0]
     }
 
+    #[instrument(level = "debug", skip(bytes))]
     pub fn load_document(bytes: &[u8]) -> Result<Vec<Change>, AutomergeError> {
         load_blocks(bytes)
     }
@@ -568,7 +572,7 @@ fn group_doc_change_and_doc_ops(
                 let del = DocOp {
                     actor: succ.1,
                     ctr: succ.0,
-                    action: amp::OpType::Del,
+                    action: InternalOpType::Del,
                     obj: op.obj.clone(),
                     key,
                     succ: Vec::new(),
@@ -631,7 +635,7 @@ fn doc_changes_to_uncompressed_changes(
                 .ops
                 .iter()
                 .map(|op| amp::Op {
-                    action: op.action.clone(),
+                    action: (&op.action).into(),
                     insert: op.insert,
                     key: op.key.clone(),
                     obj: op.obj.clone(),
@@ -729,6 +733,7 @@ fn compress_doc_changes(
     Some(changes)
 }
 
+#[instrument(level = "debug", skip(changes, actors))]
 fn group_doc_ops(changes: &[amp::UncompressedChange], actors: &[amp::ActorId]) -> Vec<DocOp> {
     let mut by_obj_id = HashMap::<amp::ObjectId, HashMap<amp::Key, HashMap<amp::OpId, _>>>::new();
     let mut by_ref = HashMap::<amp::ObjectId, HashMap<amp::Key, Vec<amp::OpId>>>::new();
@@ -736,10 +741,11 @@ fn group_doc_ops(changes: &[amp::UncompressedChange], actors: &[amp::ActorId]) -
     let mut ops = Vec::new();
 
     for change in changes {
-        for (i, op) in change.operations.iter().enumerate() {
+        for (i, op) in ExpandedOpIterator::new(&change.operations[..]).enumerate() {
+            //for (i, op) in change.operations.iter().enumerate() {
             let opid = amp::OpId(change.start_op + i as u64, change.actor_id.clone());
             let objid = op.obj.clone();
-            if let amp::OpType::Make(amp::ObjType::Sequence(_)) = op.action {
+            if let InternalOpType::Make(amp::ObjType::Sequence(_)) = op.action {
                 is_seq.insert(opid.clone().into());
             }
 
@@ -774,7 +780,7 @@ fn group_doc_ops(changes: &[amp::UncompressedChange], actors: &[amp::ActorId]) -
                     },
                 );
 
-            for pred in &op.pred {
+            for pred in op.pred {
                 by_obj_id
                     .entry(objid.clone())
                     .or_default()
@@ -818,7 +824,7 @@ fn group_doc_ops(changes: &[amp::UncompressedChange], actors: &[amp::ActorId]) -
             if let Some(key_ops) = by_obj_id.get(objid).and_then(|d| d.get(&key)) {
                 for opid in key_ops.keys().sorted() {
                     let op = key_ops.get(opid).unwrap();
-                    if op.action != amp::OpType::Del {
+                    if op.action != InternalOpType::Del {
                         ops.push(op.clone());
                     }
                 }
@@ -841,6 +847,7 @@ fn get_heads(changes: &[amp::UncompressedChange]) -> HashSet<amp::ChangeHash> {
     })
 }
 
+#[instrument(level = "debug", skip(changes))]
 pub(crate) fn encode_document(
     changes: Vec<amp::UncompressedChange>,
 ) -> Result<Vec<u8>, AutomergeError> {
@@ -1047,7 +1054,33 @@ mod tests {
         assert_eq!(bin1, bin2);
     }
 
-    #[test]
+    #[test_env_log::test]
+    fn test_multiops() {
+        let actor1 = amp::ActorId::from_str("deadbeefdeadbeef").unwrap();
+        let change1 = amp::UncompressedChange {
+            start_op: 123,
+            seq: 29291,
+            time: 12_341_231,
+            message: Some("A multiop change".into()),
+            hash: None,
+            actor_id: actor1.clone(),
+            deps: vec![],
+            operations: vec![amp::Op {
+                action: amp::OpType::MultiSet(vec![1.into(), 2.into()]),
+                key: amp::ElementId::Head.into(),
+                obj: actor1.op_id_at(10).into(),
+                insert: true,
+                pred: Vec::new(),
+            }],
+            extra_bytes: Vec::new(),
+        };
+        let bin1 = Change::try_from(change1.clone()).unwrap();
+        let change2 = bin1.decode();
+        let bin2 = Change::try_from(change2.clone()).unwrap();
+        assert_eq!(bin1, bin2);
+    }
+
+    #[test_env_log::test]
     fn test_encode_decode_document() {
         let actor = amp::ActorId::random();
         let mut backend = crate::Backend::init();
@@ -1102,13 +1135,22 @@ mod tests {
             hash: None,
             actor_id: change1.actor_id,
             deps: vec![binchange1.hash],
-            operations: vec![amp::Op {
-                action: amp::OpType::Set("someothervalue".into()),
-                obj: amp::ObjectId::Root,
-                key: "someotherkey".into(),
-                insert: false,
-                pred: Vec::new(),
-            }],
+            operations: vec![
+                amp::Op {
+                    action: amp::OpType::Set("someothervalue".into()),
+                    obj: amp::ObjectId::Root,
+                    key: "someotherkey".into(),
+                    insert: false,
+                    pred: Vec::new(),
+                },
+                amp::Op {
+                    action: amp::OpType::MultiSet(vec![1.into(), 2.into(), 3.into()]),
+                    obj: actor.op_id_at(2).into(),
+                    key: amp::ElementId::Head.into(),
+                    insert: true,
+                    pred: Vec::new(),
+                },
+            ],
             extra_bytes: vec![],
         };
         let binchange2: Change = Change::try_from(change2).unwrap();
@@ -1129,6 +1171,8 @@ mod tests {
             loaded_changes,
             changes.into_iter().cloned().collect::<Vec<Change>>()
         );
+        // Check that expanded ops are accounted for in max_op
+        assert_eq!(loaded_changes[1].max_op(), 8);
     }
 
     #[test_env_log::test]

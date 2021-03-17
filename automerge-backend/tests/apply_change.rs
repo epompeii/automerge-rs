@@ -450,12 +450,12 @@ fn test_create_lists() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: vec![DiffEdit::Insert{ index: 0, elem_id: actor.op_id_at(2).into() }],
-                        props: hashmap!{
-                            0 => hashmap!{
-                                actor.op_id_at(2) => Diff::Value(ScalarValue::Str("chaffinch".into()))
-                            }
-                        }
+                        edits: vec![DiffEdit::SingleElementInsert{
+                            index: 0,
+                            elem_id: actor.op_id_at(2).into(),
+                            value: Diff::Value(ScalarValue::Str("chaffinch".into())),
+
+                        }],
                     })
                 }
             },
@@ -535,12 +535,11 @@ fn test_apply_updates_inside_lists() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: Vec::new(),
-                        props: hashmap!{
-                            0 => hashmap!{
-                                actor.op_id_at(3) => Diff::Value("greenfinch".into())
-                            }
-                        }
+                        edits: vec![DiffEdit::Update{
+                            index: 0,
+                            opid: actor.op_id_at(2).into(),
+                            value: Diff::Value("greenfinch".into()),
+                        }],
                     })
                 }
             },
@@ -621,8 +620,7 @@ fn test_delete_list_elements() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id:  actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        props: hashmap!{},
-                        edits: vec![DiffEdit::Remove{index: 0}]
+                        edits: vec![DiffEdit::Remove{index: 0, count: 1}]
                     })
                 }
             },
@@ -704,10 +702,13 @@ fn test_handle_list_element_insertion_and_deletion_in_same_change() {
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
                         edits: vec![
-                            DiffEdit::Insert{index: 0, elem_id: actor.op_id_at(2).into()},
-                            DiffEdit::Remove{index: 0},
+                            DiffEdit::SingleElementInsert{
+                                index: 0,
+                                elem_id: actor.op_id_at(2).into(),
+                                value: amp::Diff::Value("chaffinch".into()),
+                            },
+                            DiffEdit::Remove{index: 0, count: 1},
                         ],
-                        props: hashmap!{}
                     })
                 }
             },
@@ -918,12 +919,11 @@ fn test_support_date_objects_in_a_list() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: vec![DiffEdit::Insert{index: 0, elem_id: actor.op_id_at(2).into()}],
-                        props: hashmap!{
-                            0 => hashmap!{
-                                actor.op_id_at(2) => Diff::Value(ScalarValue::Timestamp(1_586_528_191_421))
-                            }
-                        }
+                        edits: vec![DiffEdit::SingleElementInsert{
+                            index: 0,
+                            elem_id: actor.op_id_at(2).into(),
+                            value: Diff::Value(ScalarValue::Timestamp(1_586_528_191_421))
+                        }],
                     })
                 }
             },
@@ -990,12 +990,11 @@ fn test_cursor_objects() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: vec![DiffEdit::Insert{index: 0, elem_id: actor.op_id_at(2).into()}],
-                        props: hashmap!{
-                            0 => hashmap!{
-                                actor.op_id_at(2) => Diff::Value(ScalarValue::Str("something".into())),
-                            }
-                        }
+                        edits: vec![DiffEdit::SingleElementInsert{
+                            index: 0,
+                            elem_id: actor.op_id_at(2).into(),
+                            value: Diff::Value(ScalarValue::Str("something".into())),
+                        }],
                     })
                 },
                 "cursor".into() => hashmap!{
@@ -1117,12 +1116,11 @@ fn test_updating_sequences_updates_referring_cursors() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: vec![DiffEdit::Insert{index: 0, elem_id: actor.op_id_at(4).into()}],
-                        props: hashmap!{
-                            0 => hashmap!{
-                                actor.op_id_at(4) => Diff::Value(ScalarValue::Str("something else".into())),
-                            }
-                        }
+                        edits: vec![DiffEdit::SingleElementInsert{
+                            index: 0,
+                            elem_id: actor.op_id_at(4).into(),
+                            value: Diff::Value(ScalarValue::Str("something else".into())),
+                        }],
                     })
                 },
                 "cursor".into() => hashmap!{
@@ -1219,8 +1217,7 @@ fn test_updating_sequences_updates_referring_cursors_with_deleted_items() {
                     actor.op_id_at(1) => Diff::Seq(SeqDiff{
                         object_id: actor.op_id_at(1).into(),
                         obj_type: SequenceType::List,
-                        edits: vec![DiffEdit::Remove{index: 0 }],
-                        props: hashmap!{}
+                        edits: vec![DiffEdit::Remove{index: 0, count: 1}],
                     })
                 },
                 "cursor".into() => hashmap!{

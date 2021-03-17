@@ -2,7 +2,6 @@ use automerge_frontend::Frontend;
 use automerge_protocol as amp;
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use maplit::hashmap;
-use std::collections::HashMap;
 
 pub fn sequential_inserts_in_multiple_patches(c: &mut Criterion) {
     let actor_id = amp::ActorId::random();
@@ -29,32 +28,28 @@ pub fn sequential_inserts_in_multiple_patches(c: &mut Criterion) {
     for index in 0..6000 {
         let op_num = index + 2;
         let this_op_id = actor_id.op_id_at(op_num as u64);
-        patches.push(amp::Patch{
+        patches.push(amp::Patch {
             actor: None,
             seq: None,
-            clock: hashmap!{actor_id.clone() => op_num as u64},
+            clock: hashmap! {actor_id.clone() => op_num as u64},
             deps: Vec::new(),
             max_op: op_num as u64,
-            diffs: Some(amp::Diff::Map(amp::MapDiff{
+            diffs: Some(amp::Diff::Map(amp::MapDiff {
                 object_id: amp::ObjectId::Root,
                 obj_type: amp::MapType::Map,
-                props: hashmap!{
+                props: hashmap! {
                     "text".to_string() => hashmap!{
                         make_list_opid.clone() => amp::Diff::Seq(amp::SeqDiff{
                             object_id: make_list_opid.clone().into(),
                             obj_type: amp::SequenceType::Text,
-                            edits: vec![amp::DiffEdit::Insert{
+                            edits: vec![amp::DiffEdit::SingleElementInsert{
                                 index,
                                 elem_id: this_op_id.clone().into(),
+                                value: amp::Diff::Value(amp::ScalarValue::Str("c".to_string())),
                             }],
-                            props: hashmap!{
-                                index => hashmap!{
-                                    this_op_id => amp::Diff::Value(amp::ScalarValue::Str("c".to_string()))
-                                }
-                            }
                         })
                     }
-                }
+                },
             })),
         });
     }
@@ -85,18 +80,14 @@ pub fn sequential_inserts_in_single_patch(c: &mut Criterion) {
     let actor_id = amp::ActorId::random();
     let make_list_opid = actor_id.op_id_at(1);
     let mut edits: Vec<amp::DiffEdit> = Vec::new();
-    let mut props: HashMap<usize, HashMap<amp::OpId, amp::Diff>> = HashMap::new();
     for index in 0..6000 {
         let op_num = index + 2;
         let this_op_id = actor_id.op_id_at(op_num as u64);
-        edits.push(amp::DiffEdit::Insert {
+        edits.push(amp::DiffEdit::SingleElementInsert {
             index,
             elem_id: this_op_id.clone().into(),
+            value: amp::Diff::Value(amp::ScalarValue::Str("c".to_string())),
         });
-        props.insert(
-            index,
-            hashmap! {this_op_id => amp::Diff::Value(amp::ScalarValue::Str("c".to_string()))},
-        );
     }
     let patch: amp::Patch = amp::Patch {
         actor: None,
@@ -113,7 +104,6 @@ pub fn sequential_inserts_in_single_patch(c: &mut Criterion) {
                         object_id: make_list_opid.into(),
                         obj_type: amp::SequenceType::Text,
                         edits,
-                        props,
                     }),
                 }
             },
